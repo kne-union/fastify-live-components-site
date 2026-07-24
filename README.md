@@ -42,6 +42,20 @@ npm i --save @kne/fastify-live-components-site
 | getContentHost | 内容短链基址（不含站点 shorten） | `() => string` | `` `${prefix}` `` → 访问路径 `` `${prefix}/content/{code}` `` |
 | getShortenServices | 注入 shorten 服务 | `() => services` | `() => fastify.shorten.services` |
 | getAuthenticate | 按功能返回鉴权中间件 | `(type) => middleware[]` | 见下表 |
+| ai | AI 生成配置 | object | 见下表 |
+
+### ai
+
+| 属性名 | 说明 | 类型 | 默认值 |
+|-----|----|----|-----|
+| getAIModel | 返回 ai-sdk LanguageModel；未配置则全站 `aiEnabled: false` | `() => LanguageModel \| Promise<LanguageModel>` | `null` |
+| catalogCacheDir | 远程组件文档索引缓存目录（按库名/版本落盘） | string | 插件内 `data/ai-catalog` |
+| npmRegistry | 传给 `@kne/load-npm-info` 的 registry；不传则用其默认 | string | - |
+| remotePackageNames | remote 名 → npm 包名；默认 `` `@kne-components/${name}` `` | object | `{}` |
+
+站点 `options.aiEnabled === false` 时可关闭单站 AI（在 create/save 的 `options` 中配置）。
+
+提示词（refine/generate）仅插件内置，不允许外部传入。
 
 ### getAuthenticate(type)
 
@@ -72,6 +86,7 @@ npm i --save @kne/fastify-live-components-site
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
+| GET | `{host}/info` | `{ name, status, aiEnabled, defaultPermission }` |
 | GET | `{host}/getFolderTree` | 文件树 |
 | GET | `{host}/get?id=` | 读文件（JSON：`{ id, name, permission, content }`） |
 | GET | `{prefix}/content/{contentShorten}` | 直出已保存 content（`text/plain`，无 `{code,data}`；不带站点 shorten） |
@@ -83,6 +98,31 @@ npm i --save @kne/fastify-live-components-site
 | POST | `{host}/save` | `{ id, content }` |
 | POST | `{host}/rename` | `{ id, name }` |
 | POST | `{host}/remove` | `{ ids: string[] }` |
+| POST | `{host}/ai/start` | 创建 AI 流任务；见下 |
+| GET | `{host}/ai/stream?token=` | SSE 流式输出 |
+
+### AI（需 `options.ai.getAIModel`）
+
+`POST {host}/ai/start` body：
+
+```js
+{
+  mode: 'refine' | 'generate',
+  messages: [{ role: 'user'|'assistant', content: string }],
+  content?: string,
+  scope?: object,
+  libs?: string[],
+  remotes?: [{ name, version, packageName? }],
+  selection?: { startLine, endLine, code, label }
+}
+```
+
+返回 `{ streamToken }`。随后 `GET {host}/ai/stream?token=` 以 SSE 推送：
+
+- `{ text, done: false }` 增量文本
+- `{ done: true, suggestedScope? }` 结束
+
+前端从 `@kne/remote-loader` preset 收集 `remotes`，并从当前环境合并 `libs` 键名一并上传。服务端按「库名/版本」缓存组件文档索引（`load-npm-info` + `md-doc`）。
 
 树节点：`{ id, name, type: 'file'|'directory', permission: 'r'|'rw', children? }`。
 

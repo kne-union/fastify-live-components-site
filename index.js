@@ -17,6 +17,12 @@ module.exports = fp(
         getSiteHost: null,
         // 内容短链基址（不含站点 shorten），默认 `${prefix}` → `${prefix}/content/{code}`
         getContentHost: null,
+        ai: {
+          getAIModel: null,
+          catalogCacheDir: null,
+          npmRegistry: null,
+          remotePackageNames: {}
+        },
         getShortenServices: () => {
           if (!fastify.shorten) {
             throw new Error('fastify-shorten plugin must be registered before @kne/fastify-live-components-site, or set options.getShortenServices');
@@ -57,6 +63,15 @@ module.exports = fp(
     if (typeof options.getContentHost !== 'function') {
       options.getContentHost = () => options.prefix;
     }
+    options.ai = Object.assign(
+      {
+        getAIModel: null,
+        catalogCacheDir: null,
+        npmRegistry: null,
+        remotePackageNames: {}
+      },
+      options.ai || {}
+    );
 
     fastify.register(require('@kne/fastify-namespace'), {
       options,

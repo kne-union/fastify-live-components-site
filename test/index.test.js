@@ -363,4 +363,105 @@ describe('@kne/fastify-live-components-site', function () {
       expect(adminList.headers['access-control-allow-origin']).to.not.equal('*');
     });
   });
+
+  describe('AI API', () => {
+    let site;
+
+    beforeEach(async () => {
+      site = (
+        await fastify.inject({
+          method: 'POST',
+          url: `${prefix}/site/create`,
+          payload: { name: 'AI Site' }
+        })
+      ).json();
+    });
+
+    it('should report aiEnabled false without getAIModel', async () => {
+      const res = await fastify.inject({
+        method: 'GET',
+        url: `${site.host}/info`
+      });
+      expect(res.statusCode).to.equal(200);
+      expect(res.json().aiEnabled).to.equal(false);
+
+      const start = await fastify.inject({
+        method: 'POST',
+        url: `${site.host}/ai/start`,
+        payload: { mode: 'refine', messages: [{ role: 'user', content: 'hi' }], libs: [], remotes: [] }
+      });
+      expect(start.statusCode).to.equal(403);
+    });
+
+    it('should report aiEnabled true with getAIModel and create streamToken', async () => {
+      await fastify.close();
+      fastify = await createFastify({
+        ai: {
+          getAIModel: () => ({
+            specificationVersion: 'v2',
+            provider: 'mock',
+            modelId: 'mock'
+          }),
+          catalogCacheDir: require('node:path').join(require('node:os').tmpdir(), `lcs-ai-catalog-${Date.now()}`)
+        }
+      });
+
+      site = (
+        await fastify.inject({
+          method: 'POST',
+          url: `${prefix}/site/create`,
+          payload: { name: 'AI Enabled Site' }
+        })
+      ).json();
+
+      const info = await fastify.inject({
+        method: 'GET',
+        url: `${site.host}/info`
+      });
+      expect(info.statusCode).to.equal(200);
+      expect(info.json().aiEnabled).to.equal(true);
+
+      const start = await fastify.inject({
+        method: 'POST',
+        url: `${site.host}/ai/start`,
+        payload: {
+          mode: 'refine',
+          messages: [{ role: 'user', content: '加一个按钮' }],
+          libs: ['lodash'],
+          remotes: []
+        }
+      });
+      expect(start.statusCode).to.equal(200);
+      expect(start.json().streamToken).to.be.a('string').and.have.length.greaterThan(0);
+
+      const badStream = await fastify.inject({
+        method: 'GET',
+        url: `${site.host}/ai/stream?token=invalid`
+      });
+      expect(badStream.statusCode).to.equal(404);
+    });
+
+    it('should allow site options.aiEnabled false to disable AI', async () => {
+      await fastify.close();
+      fastify = await createFastify({
+        ai: {
+          getAIModel: () => ({ specificationVersion: 'v2', provider: 'mock', modelId: 'mock' })
+        }
+      });
+
+      site = (
+        await fastify.inject({
+          method: 'POST',
+          url: `${prefix}/site/create`,
+          payload: { name: 'AI Off Site', options: { aiEnabled: false } }
+        })
+      ).json();
+
+      const info = await fastify.inject({
+        method: 'GET',
+        url: `${site.host}/info`
+      });
+      expect(info.json().aiEnabled).to.equal(false);
+    });
+  });
 });
