@@ -48,6 +48,85 @@ module.exports = fp(async (fastify, options) => {
   );
 
   fastify.get(
+    `${options.prefix}/:shorten/info`,
+    {
+      onRequest: withEntryAuth,
+      schema: {
+        summary: '站点信息（含是否支持 AI）',
+        params: {
+          type: 'object',
+          required: ['shorten'],
+          properties: {
+            shorten: { type: 'string' }
+          }
+        }
+      }
+    },
+    async request => {
+      return services.ai.getInfo(request.authenticatePayload);
+    }
+  );
+
+  fastify.post(
+    `${options.prefix}/:shorten/ai/start`,
+    {
+      onRequest: withEntryAuth,
+      schema: {
+        summary: '创建 AI 流式任务，返回 streamToken',
+        params: {
+          type: 'object',
+          required: ['shorten'],
+          properties: {
+            shorten: { type: 'string' }
+          }
+        },
+        body: {
+          type: 'object',
+          properties: {
+            mode: { type: 'string' },
+            messages: { type: 'array' },
+            content: { type: 'string' },
+            scope: { type: 'object' },
+            libs: { type: 'array' },
+            remotes: { type: 'array' },
+            selection: { type: 'object' }
+          }
+        }
+      }
+    },
+    async request => {
+      return services.ai.start(request.authenticatePayload, request.body || {});
+    }
+  );
+
+  fastify.get(
+    `${options.prefix}/:shorten/ai/stream`,
+    {
+      onRequest: withEntryAuth,
+      schema: {
+        summary: 'SSE 推送 AI 流式输出',
+        params: {
+          type: 'object',
+          required: ['shorten'],
+          properties: {
+            shorten: { type: 'string' }
+          }
+        },
+        query: {
+          type: 'object',
+          required: ['token'],
+          properties: {
+            token: { type: 'string' }
+          }
+        }
+      }
+    },
+    async (request, reply) => {
+      return services.ai.stream(request.authenticatePayload, request.query, reply);
+    }
+  );
+
+  fastify.get(
     `${options.prefix}/:shorten/getFolderTree`,
     {
       onRequest: withEntryAuth,
