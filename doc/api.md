@@ -82,6 +82,7 @@
   messages: [{ role: 'user'|'assistant', content: string }],
   content?: string,
   scope?: object,
+  props?: object,
   libs?: string[],
   remotes?: [{ name, version, packageName? }],
   selection?: { startLine, endLine, code, label }
@@ -91,7 +92,7 @@
 返回 `{ streamToken }`。随后 `GET {host}/ai/stream?token=` 以 SSE 推送：
 
 - `{ text, done: false }` 增量文本
-- `{ done: true, suggestedScope? }` 结束
+- `{ done: true, suggestedScope?, suggestedProps? }` 结束（生成阶段可通过工具声明组件域 / 组件参数）
 
 前端从 `@kne/remote-loader` preset 收集 `remotes`，并从当前环境合并 `libs` 键名一并上传。服务端按「库名/版本」缓存组件文档索引（`load-npm-info` + `md-doc`）。
 

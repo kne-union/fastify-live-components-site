@@ -59,6 +59,7 @@ const readCachedCatalog = async (dir, remoteName, version) => {
     remote: remoteName,
     version,
     packageName: meta.packageName,
+    meta,
     index,
     components
   };
@@ -110,10 +111,24 @@ const ensureRemoteCatalog = async (remote, options) => {
 
   const dir = getCacheDir(options, name, version);
   if (isCacheComplete(dir)) {
-    return readCachedCatalog(dir, name, version);
+    const cached = await readCachedCatalog(dir, name, version);
+    if ((cached.index || []).length || Object.keys(cached.components || {}).length) {
+      return cached;
+    }
   }
 
   const packageName = resolvePackageName(remote, options);
+  const writeEmpty = async error => {
+    await fsp.mkdir(dir, { recursive: true });
+    const empty = { index: [], components: {} };
+    await Promise.all([
+      fsp.writeFile(path.join(dir, 'meta.json'), JSON.stringify({ packageName, version, error, builtAt: Date.now() }, null, 2)),
+      fsp.writeFile(path.join(dir, 'index.json'), JSON.stringify(empty.index, null, 2)),
+      fsp.writeFile(path.join(dir, 'components.json'), JSON.stringify(empty.components, null, 2))
+    ]);
+    return { remote: name, version, packageName, error, ...empty };
+  };
+
   const loadOpts = {};
   if (options.ai?.npmRegistry) {
     loadOpts.registry = options.ai.npmRegistry;
@@ -125,43 +140,53 @@ const ensureRemoteCatalog = async (remote, options) => {
     info = await loadNpmInfo(pkgSpec, loadOpts);
   } catch (e) {
     console.warn(`[ai-catalog] load-npm-info failed for ${packageName}@${version}: ${e.message}`);
-    await fsp.mkdir(dir, { recursive: true });
-    const empty = { index: [], components: {} };
-    await Promise.all([
-      fsp.writeFile(path.join(dir, 'meta.json'), JSON.stringify({ packageName, version, error: e.message, builtAt: Date.now() }, null, 2)),
-      fsp.writeFile(path.join(dir, 'index.json'), JSON.stringify(empty.index, null, 2)),
-      fsp.writeFile(path.join(dir, 'components.json'), JSON.stringify(empty.components, null, 2))
-    ]);
-    return { remote: name, version, packageName, ...empty };
+    return writeEmpty(e.message);
   }
 
-  const { index, components } = buildCatalogFromReadme(info.readme, name);
-  await fsp.mkdir(dir, { recursive: true });
-  await Promise.all([
-    fsp.writeFile(path.join(dir, 'meta.json'), JSON.stringify({ packageName, version: info.version || version, builtAt: Date.now() }, null, 2)),
-    fsp.writeFile(path.join(dir, 'index.json'), JSON.stringify(index, null, 2)),
-    fsp.writeFile(path.join(dir, 'components.json'), JSON.stringify(components, null, 2))
-  ]);
+  try {
+    const { index, components } = buildCatalogFromReadme(info.readme, name);
+    await fsp.mkdir(dir, { recursive: true });
+    await Promise.all([
+      fsp.writeFile(path.join(dir, 'meta.json'), JSON.stringify({ packageName, version: info.version || version, builtAt: Date.now() }, null, 2)),
+      fsp.writeFile(path.join(dir, 'index.json'), JSON.stringify(index, null, 2)),
+      fsp.writeFile(path.join(dir, 'components.json'), JSON.stringify(components, null, 2))
+    ]);
 
-  return {
-    remote: name,
-    version: info.version || version,
-    packageName,
-    index,
-    components
-  };
+    return {
+      remote: name,
+      version: info.version || version,
+      packageName,
+      index,
+      components
+    };
+  } catch (e) {
+    console.warn(`[ai-catalog] build failed for ${packageName}@${version}: ${e.message}`);
+    return writeEmpty(e.message);
+  }
+};
+
+const withTimeout = (promise, ms, label) => {
+  let timer;
+  return Promise.race([
+    Promise.resolve(promise).finally(() => clearTimeout(timer)),
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`${label} timeout after ${ms}ms`)), ms);
+    })
+  ]);
 };
 
 const ensureRemotesCatalogs = async (remotes, options) => {
   const list = Array.isArray(remotes) ? remotes : [];
-  const catalogs = [];
-  for (const remote of list) {
-    const cat = await ensureRemoteCatalog(remote, options);
-    if (cat) {
-      catalogs.push(cat);
-    }
-  }
-  return catalogs;
+  const timeoutMs = Number(options.ai?.catalogTimeoutMs) > 0 ? Number(options.ai.catalogTimeoutMs) : 20000;
+  const results = await Promise.all(
+    list.map(remote =>
+      withTimeout(ensureRemoteCatalog(remote, options), timeoutMs, remote?.name || 'remote').catch(e => {
+        console.warn(`[ai-catalog] ${remote?.name || '?'}: ${e.message}`);
+        return null;
+      })
+    )
+  );
+  return results.filter(Boolean);
 };
 
 const getExampleCode = (catalogs, { remote, version, component, exampleId }) => {

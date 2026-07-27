@@ -227,6 +227,60 @@ module.exports = fp(async (fastify, options) => {
     };
   };
 
+  const isDescendantOf = async (siteId, ancestorId, maybeDescendantId) => {
+    let currentId = toId(maybeDescendantId);
+    const visited = new Set();
+    while (currentId) {
+      if (currentId === toId(ancestorId)) {
+        return true;
+      }
+      if (visited.has(currentId)) {
+        return false;
+      }
+      visited.add(currentId);
+      const current = await models.node.findOne({
+        where: { id: currentId, siteId },
+        attributes: ['parentId']
+      });
+      currentId = toId(current?.parentId);
+    }
+    return false;
+  };
+
+  const move = async (authenticatePayload, { id, parentId }) => {
+    const siteId = getSiteId(authenticatePayload);
+    const node = await findNode(siteId, id);
+    assertWritable(node);
+
+    const targetParentId = toId(parentId);
+    const currentParentId = toId(node.parentId);
+    if (targetParentId === currentParentId) {
+      throw new BadRequest('INVALID_MOVE_TARGET');
+    }
+    if (targetParentId && targetParentId === toId(node.id)) {
+      throw new BadRequest('INVALID_MOVE_TARGET');
+    }
+    if (node.type === 'directory' && targetParentId) {
+      const looping = await isDescendantOf(siteId, node.id, targetParentId);
+      if (looping) {
+        throw new BadRequest('INVALID_MOVE_TARGET');
+      }
+    }
+
+    await resolveParent(siteId, targetParentId);
+    await assertUniqueSiblingName(siteId, targetParentId, node.name, node.id);
+
+    node.parentId = targetParentId;
+    await node.save();
+    return {
+      id: String(node.id),
+      name: node.name,
+      type: node.type,
+      permission: node.permission,
+      parentId: targetParentId
+    };
+  };
+
   const remove = async (authenticatePayload, { ids }) => {
     const siteId = getSiteId(authenticatePayload);
     const idList = Array.isArray(ids) ? ids : [ids];
@@ -272,6 +326,7 @@ module.exports = fp(async (fastify, options) => {
       create,
       save,
       rename,
+      move,
       remove
     }
   });
