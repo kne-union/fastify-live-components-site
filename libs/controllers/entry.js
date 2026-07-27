@@ -369,6 +369,34 @@ module.exports = fp(async (fastify, options) => {
   );
 
   fastify.post(
+    `${options.prefix}/:shorten/move`,
+    {
+      onRequest: withEntryAuth,
+      schema: {
+        summary: '移动文件或文件夹到目标目录',
+        params: {
+          type: 'object',
+          required: ['shorten'],
+          properties: {
+            shorten: { type: 'string' }
+          }
+        },
+        body: {
+          type: 'object',
+          required: ['id'],
+          properties: {
+            id: { type: 'string' },
+            parentId: { type: ['string', 'null'] }
+          }
+        }
+      }
+    },
+    async request => {
+      return services.node.move(request.authenticatePayload, request.body);
+    }
+  );
+
+  fastify.post(
     `${options.prefix}/:shorten/remove`,
     {
       onRequest: withEntryAuth,

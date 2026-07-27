@@ -241,21 +241,47 @@ describe('@kne/fastify-live-components-site', function () {
       ).json();
       expect(renamed.name).to.equal('b.js');
 
+      const otherFolder = (
+        await fastify.inject({
+          method: 'POST',
+          url: `${site.host}/createFolder`,
+          payload: { name: 'assets' }
+        })
+      ).json();
+
+      const moved = (
+        await fastify.inject({
+          method: 'POST',
+          url: `${site.host}/move`,
+          payload: { id: file.id, parentId: otherFolder.id }
+        })
+      ).json();
+      expect(moved.parentId).to.equal(String(otherFolder.id));
+
+      const invalidMove = await fastify.inject({
+        method: 'POST',
+        url: `${site.host}/move`,
+        payload: { id: otherFolder.id, parentId: otherFolder.id }
+      });
+      expect(invalidMove.statusCode).to.equal(400);
+
       const tree = (
         await fastify.inject({
           method: 'GET',
           url: `${site.host}/getFolderTree`
         })
       ).json();
-      expect(tree).to.have.length(1);
-      expect(tree[0].name).to.equal('docs');
-      expect(tree[0].children).to.have.length(1);
-      expect(tree[0].children[0].name).to.equal('b.js');
+      expect(tree).to.have.length(2);
+      const docs = tree.find(item => item.name === 'docs');
+      const assets = tree.find(item => item.name === 'assets');
+      expect(docs.children).to.deep.equal([]);
+      expect(assets.children).to.have.length(1);
+      expect(assets.children[0].name).to.equal('b.js');
 
       const removeFolder = await fastify.inject({
         method: 'POST',
         url: `${site.host}/remove`,
-        payload: { ids: [folder.id] }
+        payload: { ids: [otherFolder.id] }
       });
       expect(removeFolder.statusCode).to.equal(400);
 
@@ -269,6 +295,12 @@ describe('@kne/fastify-live-components-site', function () {
         method: 'POST',
         url: `${site.host}/remove`,
         payload: { ids: [folder.id] }
+      });
+
+      await fastify.inject({
+        method: 'POST',
+        url: `${site.host}/remove`,
+        payload: { ids: [otherFolder.id] }
       });
 
       res = await fastify.inject({
