@@ -1,6 +1,6 @@
 {
   "name": "@kne/fastify-live-components-site",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "Fastify 插件：为 LiveComponentEditor 提供远程站点文件树与短链访问管理",
   "main": "index.js",
   "scripts": {

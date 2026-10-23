@@ -496,4 +496,41 @@ describe('@kne/fastify-live-components-site', function () {
       expect(info.json().aiEnabled).to.equal(false);
     });
   });
+
+  describe('接口文档', () => {
+    it('所有路由都有 tags、summary，参数都有用途说明，并声明 200 响应', async () => {
+      await fastify.close();
+      const routes = [];
+      fastify = await createFastify({}, instance => {
+        instance.addHook('onRoute', route => {
+          if (route.method !== 'HEAD' && !(route.schema && route.schema.hide)) {
+            routes.push(route);
+          }
+        });
+      });
+
+      const missing = [];
+      const checkProps = (where, schema) => {
+        if (!schema) return;
+        [].concat(schema.oneOf || [], schema.anyOf || [], schema).forEach(item => {
+          Object.entries(item.properties || {}).forEach(([key, prop]) => {
+            if (!prop.description) missing.push(`${where}.${key}`);
+            if (prop.type === 'object') checkProps(`${where}.${key}`, prop);
+          });
+        });
+      };
+      routes.forEach(route => {
+        const { schema = {} } = route;
+        const name = `${route.method} ${route.url}`;
+        if (!(schema.tags && schema.tags.length)) missing.push(`${name} tags`);
+        if (!schema.summary) missing.push(`${name} summary`);
+        if (!(schema.response && schema.response[200] && schema.response[200].description)) missing.push(`${name} response`);
+        checkProps(`${name} body`, schema.body);
+        checkProps(`${name} query`, schema.querystring || schema.query);
+        checkProps(`${name} params`, schema.params);
+      });
+      expect(routes.length).to.equal(20);
+      expect(missing).to.deep.equal([]);
+    });
+  });
 });

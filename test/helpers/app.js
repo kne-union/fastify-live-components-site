@@ -1,12 +1,16 @@
 const Fastify = require('fastify');
 const qs = require('qs');
 
-const createFastify = async (pluginOptions = {}) => {
+const createFastify = async (pluginOptions = {}, setup) => {
   const fastify = Fastify({
     routerOptions: {
       querystringParser: str => qs.parse(str)
     }
   });
+
+  if (typeof setup === 'function') {
+    setup(fastify);
+  }
 
   await fastify.register(require('@fastify/sensible'));
 
